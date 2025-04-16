@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import urllib.request
 import re
 
-WEBHOOK_URL = "https://hook.eu2.make.com/a2sx28unpo3p27etd4gxlgyofssyd94z"
+WEBHOOK_URL = "https://hook.eu2.make.com/14ub8oo8d3wj64stedeo6k8kxeqshs21"
 INTERVAL = Interval.INTERVAL_1_HOUR
 
 TICKERS_FIXE = [
