@@ -73,6 +73,7 @@ def analyze_ticker(ticker):
             "scor": scor,
             "comentarii": f"RSI: {rsi} | MACD: {macd} | EMA: {ema}",
             "link": f"https://www.tradingview.com/symbols/{ticker['symbol']}/"
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
     except Exception as e:
         print(f"Eroare analiză {ticker['symbol']}: {e}")
