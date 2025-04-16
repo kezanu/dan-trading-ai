@@ -1,4 +1,3 @@
-
 import requests
 from tradingview_ta import TA_Handler, Interval
 from datetime import datetime
@@ -10,7 +9,7 @@ WEBHOOK_URL = "https://hook.eu2.make.com/14ub8oo8d3wj64stedeo6k8kxeqshs21"
 INTERVAL = Interval.INTERVAL_1_HOUR
 
 TICKERS_FIXE = [
-    {"symbol": "DIA", "exchange": "AMEX", "screener": "america"},  # SPDR Dow Jones ETF în loc de US30
+    {"symbol": "DIA", "exchange": "AMEX", "screener": "america"},
     {"symbol": "XAUUSD", "exchange": "FOREXCOM", "screener": "forex"},
     {"symbol": "EURUSD", "exchange": "OANDA", "screener": "forex"},
     {"symbol": "GBPJPY", "exchange": "OANDA", "screener": "forex"},
@@ -47,13 +46,16 @@ def analyze_ticker(ticker):
             interval=INTERVAL
         )
         analysis = handler.get_analysis()
+        indicators = analysis.indicators
         summary = analysis.summary
-        rsi = analysis.indicators.get('RSI', 'N/A')
-        macd = summary.get('MACD', 'N/A')
-        ema = summary.get('EMA20', 'N/A')
+
+        rsi = indicators.get('RSI', 'N/A')
+        macd = indicators.get('MACD.macd', 'N/A')
+        ema = indicators.get('EMA20', 'N/A')
         recomandare = summary['RECOMMENDATION']
         scor = (list(summary.values()).count("BUY") - list(summary.values()).count("SELL")) * 10 + 50
-        tp = sl = price = analysis.indicators['close']
+        tp = sl = price = indicators['close']
+
         if recomandare in ["BUY", "STRONG_BUY"]:
             tp *= 1.02
             sl *= 0.99
@@ -67,9 +69,9 @@ def analyze_ticker(ticker):
             "recomandare": recomandare,
             "tp": round(tp, 2),
             "sl": round(sl, 2),
-            "rsi": round(rsi, 2),
-            "macd": macd,
-            "ema": ema,
+            "rsi": round(rsi, 2) if isinstance(rsi, (int, float)) else rsi,
+            "macd": round(macd, 2) if isinstance(macd, (int, float)) else macd,
+            "ema": round(ema, 2) if isinstance(ema, (int, float)) else ema,
             "scor": scor,
             "comentarii": f"RSI: {rsi} | MACD: {macd} | EMA: {ema}",
             "link": f"https://www.tradingview.com/symbols/{ticker['symbol']}/",
