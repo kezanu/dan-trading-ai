@@ -1,63 +1,95 @@
-
-from flask import Flask, request, jsonify
+import requests
 from tradingview_ta import TA_Handler, Interval
-import os
+from datetime import datetime
+from bs4 import BeautifulSoup
+import urllib.request
+import re
 
-app = Flask(__name__)
+WEBHOOK_URL = "https://hook.eu2.make.com/a2sx28unpo3p27etd4gxlgyofssyd94z"
+INTERVAL = Interval.INTERVAL_1_HOUR
 
-interval_map = {
-    "1m": Interval.INTERVAL_1_MINUTE,
-    "5m": Interval.INTERVAL_5_MINUTES,
-    "15m": Interval.INTERVAL_15_MINUTES,
-    "1h": Interval.INTERVAL_1_HOUR,
-    "4h": Interval.INTERVAL_4_HOURS,
-    "1d": Interval.INTERVAL_1_DAY,
-    "1w": Interval.INTERVAL_1_WEEK,
-    "1M": Interval.INTERVAL_1_MONTH
-}
+TICKERS_FIXE = [
+    {"symbol": "DIA", "exchange": "AMEX", "screener": "america"},  # SPDR Dow Jones ETF în loc de US30
+    {"symbol": "XAUUSD", "exchange": "FOREXCOM", "screener": "forex"},
+    {"symbol": "EURUSD", "exchange": "OANDA", "screener": "forex"},
+    {"symbol": "GBPJPY", "exchange": "OANDA", "screener": "forex"},
+    {"symbol": "USDCAD", "exchange": "OANDA", "screener": "forex"},
+    {"symbol": "CHFCAD", "exchange": "OANDA", "screener": "forex"},
+    {"symbol": "GBPCHF", "exchange": "OANDA", "screener": "forex"}
+]
 
-def get_analysis(symbol, exchange, screener, interval):
-    handler = TA_Handler(
-        symbol=symbol,
-        exchange=exchange,
-        screener=screener,
-        interval=interval
-    )
-    analysis = handler.get_analysis()
-    return {
-        "symbol": symbol,
-        "exchange": exchange,
-        "screener": screener,
-        "interval": interval,
-        "recommendation": analysis.summary["RECOMMENDATION"],
-        "score": analysis.summary
-    }
+def get_finviz_tickers():
+    url = "https://finviz.com/screener.ashx?v=111&f=cap_micro,geo_usa,sh_float_u50,sh_price_u10,ta_perf_prevup5&o=-change"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    req = urllib.request.Request(url, headers=headers)
+    page = urllib.request.urlopen(req)
+    soup = BeautifulSoup(page, 'html.parser')
 
-@app.route("/analyze", methods=["POST"])
-def analyze():
+    tickers = []
+    for link in soup.find_all('a', href=True):
+        if link['href'].startswith("quote.ashx"):
+            ticker = link.text.strip()
+            if re.match(r'^[A-Z]{1,5}$', ticker):
+                tickers.append({
+                    "symbol": ticker,
+                    "exchange": "NASDAQ",
+                    "screener": "america"
+                })
+    return tickers[:10]
+
+def analyze_ticker(ticker):
     try:
-        data = request.get_json()
-        symbol = data.get("symbol")
-        exchange = data.get("exchange")
-        screener = data.get("screener")
-        interval_key = data.get("interval")
+        handler = TA_Handler(
+            symbol=ticker['symbol'],
+            exchange=ticker['exchange'],
+            screener=ticker['screener'],
+            interval=INTERVAL
+        )
+        analysis = handler.get_analysis()
+        summary = analysis.summary
+        rsi = analysis.indicators.get('RSI', 'N/A')
+        macd = summary.get('MACD', 'N/A')
+        ema = summary.get('EMA20', 'N/A')
+        recomandare = summary['RECOMMENDATION']
+        scor = (list(summary.values()).count("BUY") - list(summary.values()).count("SELL")) * 10 + 50
+        tp = sl = price = analysis.indicators['close']
+        if recomandare in ["BUY", "STRONG_BUY"]:
+            tp *= 1.02
+            sl *= 0.99
+        elif recomandare in ["SELL", "STRONG_SELL"]:
+            tp *= 0.98
+            sl *= 1.01
 
-        if not all([symbol, exchange, screener, interval_key]):
-            return jsonify({"error": "Missing input fields"}), 400
-
-        if interval_key not in interval_map:
-            return jsonify({"error": f"Invalid interval: {interval_key}"}), 400
-
-        result = get_analysis(symbol, exchange, screener, interval_map[interval_key])
-        return jsonify(result)
-
+        return {
+            "ticker": ticker['symbol'],
+            "tip_piata": "Forex" if ticker['screener'] == "forex" else "Stock",
+            "recomandare": recomandare,
+            "tp": round(tp, 2),
+            "sl": round(sl, 2),
+            "rsi": round(rsi, 2),
+            "macd": macd,
+            "ema": ema,
+            "scor": scor,
+            "comentarii": f"RSI: {rsi} | MACD: {macd} | EMA: {ema}",
+            "link": f"https://www.tradingview.com/symbols/{ticker['symbol']}/"
+        }
     except Exception as e:
-        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+        print(f"Eroare analiză {ticker['symbol']}: {e}")
+        return None
 
-@app.route("/", methods=["GET"])
-def home():
-    return "✅ Dan's TradingView AI API is running!"
+def trimite_webhook(payload):
+    try:
+        r = requests.post(WEBHOOK_URL, json=payload)
+        print(f"✅ Trimis: {payload['ticker']} | Scor: {payload['scor']}")
+    except Exception as e:
+        print(f"Eșec trimitere {payload['ticker']}: {e}")
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    print("Start analiză la:", datetime.now())
+    tickere = TICKERS_FIXE + get_finviz_tickers()
+    for t in tickere:
+        if t['symbol'].lower() not in ["usa"]:
+            rezultat = analyze_ticker(t)
+            if rezultat:
+                trimite_webhook(rezultat)
+    print("✅ Toate alertele au fost procesate!")
